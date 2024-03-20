@@ -67,6 +67,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 			left_toggles = 6;
 		}
 		left_last_press_tick = HAL_GetTick();
+	} else if (GPIO_Pin == S2_Pin) {
+		left_toggles = 0;
 	}
 }
 
