@@ -21,7 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "ring_buffer.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -45,6 +45,8 @@ UART_HandleTypeDef huart2;
 /* USER CODE BEGIN PV */
 uint32_t left_toggles = 0;
 uint32_t left_last_press_tick = 0;
+
+uint8_t data;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -57,10 +59,18 @@ void heartbeat(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+  if (huart->Instance == USART2) {
+	  ring_buffer_write(data);
+	  HAL_UART_Receive_IT(&huart2, &data, 1);
+  }
+}
+
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 	if (GPIO_Pin == S1_Pin) {
-		HAL_UART_Transmit(&huart2, "S1\r\n", 4, 10);
+		HAL_UART_Transmit(&huart2, (uint8_t *)"S1\r\n", 4, 10);
 		if (HAL_GetTick() < (left_last_press_tick + 300)) { // if last press was in the last 300ms
 			left_toggles = 0xFFFFFF; // a long time toggling (infinite)
 		} else {
@@ -132,8 +142,13 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  HAL_UART_Receive_IT(&huart2, &data, 1);
   while (1)
   {
+	  uint8_t byte = 0;
+	  if (ring_buffer_read(&byte) != 0) { // 0x20
+		  HAL_UART_Transmit(&huart2, &byte, 1, 10);
+	  }
 	  heartbeat();
 	  turn_signal_left();
     /* USER CODE END WHILE */
