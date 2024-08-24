@@ -1,11 +1,24 @@
 
 #include "ring_buffer.h"
 
-#define capacity (8)
+#define capacity (10)
 uint8_t ring_buffer[capacity];
 uint8_t head_ptr;
 uint8_t tail_ptr;
 uint8_t is_full;
+
+
+/*
+ * @brief Esta funcion reinicia los datos disponibles en el buffer
+ *
+ * @retval size: cantidad de datos disponibles
+ */
+void ring_buffer_reset(void)
+{
+	head_ptr = 0;
+	tail_ptr = 0;
+	is_full = 0;
+}
 
 /*
  * @brief Esta funcion calcula los datos disponibles en el buffer
@@ -15,11 +28,32 @@ uint8_t is_full;
 uint8_t ring_buffer_size(void)
 {
 	uint8_t size = 0;
-	if (head_ptr > tail_ptr) {
+	if (head_ptr >= tail_ptr && is_full == 0) {
 		size = head_ptr - tail_ptr;
 	} else {
-
+		size = (capacity - tail_ptr) + head_ptr;
 	}
+	return size;
+}
+
+/*
+ * @brief Esta funcion revisa si el buffer esta lleno
+ *
+ * @retval is_full: 0 si no esta lleno, 1 si esta lleno
+ */
+uint8_t ring_buffer_is_full(void)
+{
+	return is_full;
+}
+
+/*
+ * @brief Esta funcion revisa si el buffer esta vacio
+ *
+ * @retval 0 si esta vacio, 1 si no esta vacio
+ */
+uint8_t ring_buffer_is_empty(void)
+{
+	return ((head_ptr == tail_ptr) && (is_full == 0)) ? 1 : 0;
 }
 
 /**

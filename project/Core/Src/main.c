@@ -146,8 +146,21 @@ int main(void)
   while (1)
   {
 	  uint8_t byte = 0;
-	  if (ring_buffer_read(&byte) != 0) { // 0x20
-		  HAL_UART_Transmit(&huart2, &byte, 1, 10);
+	  if (ring_buffer_is_full() != 0) {
+		  int8_t id_incorrect = 0;
+		  char my_id[] = "1053821948";
+		  for (uint8_t idx = 0; idx < sizeof(my_id); idx++) {
+			  if (ring_buffer_read(&byte) != 0) { // 0x20
+				  if (byte != my_id[idx]) {
+					  id_incorrect = 1;
+				  }
+			  }
+		  }
+		  if (id_incorrect == 0) {
+			  HAL_UART_Transmit(&huart2, "Sam C\r\n", 7, 10);
+		  } else {
+			  HAL_UART_Transmit(&huart2, "Error\r\n", 7, 10);
+		  }
 	  }
 	  heartbeat();
 	  turn_signal_left();
