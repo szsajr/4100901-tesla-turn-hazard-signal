@@ -1,23 +1,25 @@
 
 #include "ring_buffer.h"
 
-#define capacity (10)
-uint8_t ring_buffer[capacity];
-uint8_t head_ptr;
-uint8_t tail_ptr;
-uint8_t is_full;
 
+void ring_buffer_init(ring_buffer_t *rb, uint8_t * mem_add, uint8_t cap)
+{
+	rb->buffer = mem_add;
+	rb->capacity = cap;
+
+	ring_buffer_reset();
+}
 
 /*
  * @brief Esta funcion reinicia los datos disponibles en el buffer
  *
  * @retval size: cantidad de datos disponibles
  */
-void ring_buffer_reset(void)
+void ring_buffer_reset(ring_buffer_t *rb)
 {
-	head_ptr = 0;
-	tail_ptr = 0;
-	is_full = 0;
+	rb->head = 0;
+	rb->tail = 0;
+	rb->is_full = 0;
 }
 
 /*
@@ -63,10 +65,10 @@ uint8_t ring_buffer_is_empty(void)
  *
  * @retval Ninguno
  */
-void ring_buffer_write(uint8_t data)
+void ring_buffer_write(ring_buffer_t *rb, uint8_t data)
 {
-	ring_buffer[head_ptr] = data;
-	head_ptr = head_ptr + 1;
+	rb->buffer[rb->head] = data;
+	rb->head = rb->head + 1;
 
 	if (head_ptr >= capacity) { // si la cabeza llega al final de la memoria
 	  head_ptr = 0;

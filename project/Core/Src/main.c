@@ -48,6 +48,11 @@ uint32_t left_toggles = 0;
 uint32_t left_last_press_tick = 0;
 
 uint8_t data;
+
+/* control variables for ring buffer in USART2 */
+#define CAPACITY_USART2 10
+uint8_t mem_usart2[CAPACITY_USART2];
+ring_buffer_t rb_usart2;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -63,9 +68,15 @@ void heartbeat(void);
 /* USER CODE BEGIN 0 */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
+  /* Data received in USART1 */
+  if (huart->Instance == USART1) {
+	  ring_buffer_write(&rb_usart1, data);
+	  HAL_UART_Receive_IT(&huart1, &data, 1);
+  }
+  /* Data received in USART2 */
   if (huart->Instance == USART2) {
-	  ring_buffer_write(data);
-	  HAL_UART_Receive_IT(&huart2, &data, 1);
+	  ring_buffer_write(&rb_usart2, data); // put the data received in buffer
+	  HAL_UART_Receive_IT(&huart2, &data, 1); // enable interrupt to continue receiving
   }
 }
 
@@ -141,20 +152,23 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  /* Initialize ring buffer (control, memory, and capacity) */
+  ring_buffer_init(&rb_usart2, mem_usart2, CAPACITY_USART2);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  /* Enable USART Rx interrupt to start receiving */
+  HAL_UART_Receive_IT(&huart1, &data, 1);
   HAL_UART_Receive_IT(&huart2, &data, 1);
   while (1)
   {
 	  uint8_t byte = 0;
-	  if (ring_buffer_is_full() != 0) {
+	  if (ring_buffer_is_full(&rb_usart2) != 0) {
 		  int8_t id_incorrect = 0;
 		  char my_id[] = "1053821948";
 		  for (uint8_t idx = 0; idx < sizeof(my_id); idx++) {
-			  if (ring_buffer_read(&byte) != 0) { // 0x20
+			  if (ring_buffer_read(&rb_usart2, &byte) != 0) { // 0x20
 				  if (byte != my_id[idx]) {
 					  id_incorrect = 1;
 				  }
