@@ -47,7 +47,13 @@ UART_HandleTypeDef huart2;
 uint32_t left_toggles = 0;
 uint32_t left_last_press_tick = 0;
 
-uint8_t data;
+uint8_t data_usart1;
+uint8_t data_usart2;
+
+/* control variables for ring buffer in USART1 */
+#define CAPACITY_USART1 5
+uint8_t mem_usart1[CAPACITY_USART1];
+ring_buffer_t rb_usart1;
 
 /* control variables for ring buffer in USART2 */
 #define CAPACITY_USART2 10
@@ -70,13 +76,13 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
   /* Data received in USART1 */
   if (huart->Instance == USART1) {
-	  ring_buffer_write(&rb_usart1, data);
-	  HAL_UART_Receive_IT(&huart1, &data, 1);
+	  ring_buffer_write(&rb_usart1, data_usart1);
+	  HAL_UART_Receive_IT(&huart1, &data_usart1, 1);
   }
   /* Data received in USART2 */
   if (huart->Instance == USART2) {
-	  ring_buffer_write(&rb_usart2, data); // put the data received in buffer
-	  HAL_UART_Receive_IT(&huart2, &data, 1); // enable interrupt to continue receiving
+	  ring_buffer_write(&rb_usart2, data_usart2); // put the data received in buffer
+	  HAL_UART_Receive_IT(&huart2, &data_usart2, 1); // enable interrupt to continue receiving
   }
 }
 
@@ -153,14 +159,15 @@ int main(void)
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
   /* Initialize ring buffer (control, memory, and capacity) */
+  ring_buffer_init(&rb_usart1, mem_usart1, CAPACITY_USART1);
   ring_buffer_init(&rb_usart2, mem_usart2, CAPACITY_USART2);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   /* Enable USART Rx interrupt to start receiving */
-  HAL_UART_Receive_IT(&huart1, &data, 1);
-  HAL_UART_Receive_IT(&huart2, &data, 1);
+  HAL_UART_Receive_IT(&huart1, &data_usart1, 1);
+  HAL_UART_Receive_IT(&huart2, &data_usart2, 1);
   while (1)
   {
 	  uint8_t byte = 0;
@@ -179,6 +186,11 @@ int main(void)
 		  } else {
 			  HAL_UART_Transmit(&huart2, "Error\r\n", 7, 10);
 		  }
+	  }
+	  if (ring_buffer_is_empty(&rb_usart1) == 0) {
+		  uint8_t data;
+		  ring_buffer_read(&rb_usart1, &data);
+		  HAL_UART_Transmit(&huart2, &data, 1, 10);
 	  }
 	  heartbeat();
 	  turn_signal_left();
