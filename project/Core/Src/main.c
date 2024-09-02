@@ -88,6 +88,51 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
+	static uint16_t last_pressed = 0xFFFF;
+	static uint32_t last_tick = 0;
+
+	if (last_pressed == GPIO_Pin) {
+		if (HAL_GetTick() < (last_tick + 200)) {
+			return;
+		}
+	}
+	last_pressed = GPIO_Pin;
+	last_tick = HAL_GetTick();
+
+	uint8_t key_pressed = 0xFF;
+	switch (GPIO_Pin) {
+	case COLUMN1_Pin:
+		HAL_GPIO_WritePin(ROW1_GPIO_Port, ROW1_Pin, GPIO_PIN_RESET);
+		if (HAL_GPIO_ReadPin(COLUMN1_GPIO_Port, COLUMN1_Pin) == 0) {
+			key_pressed = '1';
+			break;
+		}
+		HAL_GPIO_WritePin(ROW2_GPIO_Port, ROW2_Pin, GPIO_PIN_RESET);
+		if (HAL_GPIO_ReadPin(COLUMN1_GPIO_Port, COLUMN1_Pin) == 0) {
+			key_pressed = '4';
+			break;
+		}
+		HAL_GPIO_WritePin(ROW3_GPIO_Port, ROW3_Pin, GPIO_PIN_RESET);
+		if (HAL_GPIO_ReadPin(COLUMN1_GPIO_Port, COLUMN1_Pin) == 0) {
+			key_pressed = '7';
+			break;
+		}
+		HAL_GPIO_WritePin(ROW4_GPIO_Port, ROW4_Pin, GPIO_PIN_RESET);
+		if (HAL_GPIO_ReadPin(COLUMN1_GPIO_Port, COLUMN1_Pin) == 0) {
+			key_pressed = '*';
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+
+	HAL_GPIO_WritePin(ROW1_GPIO_Port, ROW1_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(ROW2_GPIO_Port, ROW2_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(ROW3_GPIO_Port, ROW3_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(ROW4_GPIO_Port, ROW4_Pin, GPIO_PIN_SET);
+	HAL_UART_Transmit(&huart2, &key_pressed, 1, 10);
+
 	if (GPIO_Pin == S1_Pin) {
 		HAL_UART_Transmit(&huart2, (uint8_t *)"S1\r\n", 4, 10);
 		if (HAL_GetTick() < (left_last_press_tick + 300)) { // if last press was in the last 300ms
@@ -334,29 +379,48 @@ static void MX_GPIO_Init(void)
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, D1_Pin|D3_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOA, D1_Pin|D3_Pin|ROW1_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(D4_GPIO_Port, D4_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOB, ROW2_Pin|ROW4_Pin|ROW3_Pin|D4_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pins : S1_Pin S2_Pin */
   GPIO_InitStruct.Pin = S1_Pin|S2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : D1_Pin D3_Pin */
-  GPIO_InitStruct.Pin = D1_Pin|D3_Pin;
+  /*Configure GPIO pins : D1_Pin D3_Pin ROW1_Pin */
+  GPIO_InitStruct.Pin = D1_Pin|D3_Pin|ROW1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : D4_Pin */
-  GPIO_InitStruct.Pin = D4_Pin;
+  /*Configure GPIO pin : COLUMN1_Pin */
+  GPIO_InitStruct.Pin = COLUMN1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(COLUMN1_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : COLUMN4_Pin */
+  GPIO_InitStruct.Pin = COLUMN4_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(COLUMN4_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : COLUMN2_Pin COLUMN3_Pin */
+  GPIO_InitStruct.Pin = COLUMN2_Pin|COLUMN3_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : ROW2_Pin ROW4_Pin ROW3_Pin D4_Pin */
+  GPIO_InitStruct.Pin = ROW2_Pin|ROW4_Pin|ROW3_Pin|D4_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
