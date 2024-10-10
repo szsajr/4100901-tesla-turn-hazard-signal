@@ -21,9 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "ring_buffer.h"
 
-#include "keypad.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -43,94 +41,112 @@
 
 /* Private variables ---------------------------------------------------------*/
 UART_HandleTypeDef huart2;
-UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
 uint32_t left_toggles = 0;
-uint32_t left_last_press_tick = 0;
+uint32_t right_toggles = 0;
+uint32_t hazard_toggles = 0;
 
-uint8_t data_usart3;
-uint8_t data_usart2;
+volatile uint8_t left_flag = 0;
+volatile uint8_t right_flag = 0;
+volatile uint8_t hazard_flag = 0;
 
-/* control variables for ring buffer in USART3 */
-#define CAPACITY_USART3 5
-uint8_t mem_usart3[CAPACITY_USART3];
-ring_buffer_t rb_usart3;
+/* Configuración de botones y LEDs */
+#define BLINK_TIMES 3
+#define DOUBLE_CLICK_TIME 300 // Tiempo para doble clic en ms
+#define BLINK_PERIOD 670      // Periodo de parpadeo
+volatile uint8_t left_button_state = 0;
+volatile uint8_t right_button_state = 0;
 
-/* control variables for ring buffer in USART2 */
-#define CAPACITY_USART2 10
-uint8_t mem_usart2[CAPACITY_USART2];
-ring_buffer_t rb_usart2;
+uint32_t last_left_press = 0;
+uint32_t last_right_press = 0;
+uint8_t left_blink_count = 0;
+uint8_t right_blink_count = 0;
+//uint32_t left_last_press_tick = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
-static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
-void heartbeat(void);
+void turn_signal_left(void);
+void turn_signal_right(void);
+void turn_signal_hazard(void);
+void hearbeat(void);
+void check_buttons(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-  /* Data received in USART3 */
-  if (huart->Instance == USART3) {
-	  ring_buffer_write(&rb_usart3, data_usart3);
-	  HAL_UART_Receive_IT(&huart3, &data_usart3, 1);
-  }
-  /* Data received in USART2 */
-  if (huart->Instance == USART2) {
-	  ring_buffer_write(&rb_usart2, data_usart2); // put the data received in buffer
-	  HAL_UART_Receive_IT(&huart2, &data_usart2, 1); // enable interrupt to continue receiving
-  }
+void turn_signal_left(void) {
+    static uint32_t turn_toggle_tick = 0;
+    if (HAL_GetTick() > turn_toggle_tick) {
+        turn_toggle_tick = HAL_GetTick() + BLINK_PERIOD;
+        HAL_GPIO_TogglePin(D3_GPIO_Port, D3_Pin);
+        left_blink_count++;
+        if (left_blink_count >= BLINK_TIMES) {
+            left_blink_count = 0;
+            left_flag = 0; // Finaliza el parpadeo de 3 veces
+        }
+    }
 }
 
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{
-	uint8_t key_pressed = keypad_scan(GPIO_Pin);
-	if (key_pressed != 0xFF) {
-		HAL_UART_Transmit(&huart2, &key_pressed, 1, 10);
-		return;
-	}
-
-	if (GPIO_Pin == S1_Pin) {
-		HAL_UART_Transmit(&huart2, (uint8_t *)"S1\r\n", 4, 10);
-		if (HAL_GetTick() < (left_last_press_tick + 300)) { // if last press was in the last 300ms
-			left_toggles = 0xFFFFFF; // a long time toggling (infinite)
-		} else {
-			left_toggles = 6;
-		}
-		left_last_press_tick = HAL_GetTick();
-	} else if (GPIO_Pin == S2_Pin) {
-		left_toggles = 0;
-	}
+void turn_signal_right(void) {
+    static uint32_t turn_toggle_tick = 0;
+    if (HAL_GetTick() > turn_toggle_tick) {
+        turn_toggle_tick = HAL_GetTick() + BLINK_PERIOD;
+        HAL_GPIO_TogglePin(D4_GPIO_Port, D4_Pin);
+        right_blink_count++;
+        if (right_blink_count >= BLINK_TIMES) {
+            right_blink_count = 0;
+            right_flag = 0; // Finaliza el parpadeo de 3 veces
+        }
+    }
 }
 
-void heartbeat(void)
-{
-	static uint32_t heartbeat_tick = 0;
-	if (heartbeat_tick < HAL_GetTick()) {
-		heartbeat_tick = HAL_GetTick() + 500;
-		HAL_GPIO_TogglePin(D1_GPIO_Port, D1_Pin);
-	}
+void turn_signal_hazard(void) {
+    static uint32_t turn_toggle_tick = 0;
+    if (HAL_GetTick() > turn_toggle_tick) {
+        turn_toggle_tick = HAL_GetTick() + BLINK_PERIOD;
+        HAL_GPIO_TogglePin(D3_GPIO_Port, D3_Pin);
+        HAL_GPIO_TogglePin(D4_GPIO_Port, D4_Pin);
+    }
 }
 
-void turn_signal_left(void)
-{
-	static uint32_t turn_toggle_tick = 0;
-	if (turn_toggle_tick < HAL_GetTick()) {
-		if (left_toggles > 0) {
-			turn_toggle_tick = HAL_GetTick() + 500;
-			HAL_GPIO_TogglePin(D3_GPIO_Port, D3_Pin);
-			left_toggles--;
-		} else {
-			HAL_GPIO_WritePin(D3_GPIO_Port, D3_Pin, 1);
-		}
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+    uint32_t current_time = HAL_GetTick();
+    if (GPIO_Pin == S1_Pin) { // Giro Izquierda
+        if (current_time - last_left_press < DOUBLE_CLICK_TIME) {
+            left_flag = 1; // Activar parpadeo indefinido
+        } else {
+            left_blink_count = 0;
+            left_flag = 1; // Activar parpadeo de 3 veces
+        }
+        last_left_press = current_time;
+        HAL_UART_Transmit(&huart2, (uint8_t*)"LEFT\r\n", 6, HAL_MAX_DELAY);
+    } else if (GPIO_Pin == S3_Pin) { // Giro Derecha
+        if (current_time - last_right_press < DOUBLE_CLICK_TIME) {
+            right_flag = 1; // Activar parpadeo indefinido
+        } else {
+            right_blink_count = 0;
+            right_flag = 1; // Activar parpadeo de 3 veces
+        }
+        last_right_press = current_time;
+        HAL_UART_Transmit(&huart2, (uint8_t*)"RIGHT\r\n", 7, HAL_MAX_DELAY);
+    } else if (GPIO_Pin == S2_Pin) { // Estacionar
+        hazard_flag = !hazard_flag; // Alternar estado de estacionar
+        HAL_UART_Transmit(&huart2, (uint8_t*)"HAZARD\r\n", 8, HAL_MAX_DELAY);
+    }
+}
 
-	}
+void hearbeat(void) {
+    static uint32_t heartbeat_tick = 0;
+    if (HAL_GetTick() > heartbeat_tick) {
+        heartbeat_tick = HAL_GetTick() + 1000; // Frecuencia de 1Hz
+        HAL_GPIO_TogglePin(D1_GPIO_Port, D1_Pin); // LED Heartbeat
+    }
 }
 /* USER CODE END 0 */
 
@@ -164,44 +180,25 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART2_UART_Init();
-  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-  /* Initialize ring buffer (control, memory, and capacity) */
-  ring_buffer_init(&rb_usart3, mem_usart3, CAPACITY_USART3);
-  ring_buffer_init(&rb_usart2, mem_usart2, CAPACITY_USART2);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  /* Enable USART Rx interrupt to start receiving */
-  HAL_UART_Receive_IT(&huart3, &data_usart3, 1);
-  HAL_UART_Receive_IT(&huart2, &data_usart2, 1);
   while (1)
   {
-	  uint8_t byte = 0;
-	  if (ring_buffer_is_full(&rb_usart2) != 0) {
-		  int8_t id_incorrect = 0;
-		  char my_id[] = "1053821948";
-		  for (uint8_t idx = 0; idx < sizeof(my_id); idx++) {
-			  if (ring_buffer_read(&rb_usart2, &byte) != 0) { // 0x20
-				  if (byte != my_id[idx]) {
-					  id_incorrect = 1;
-				  }
-			  }
-		  }
-		  if (id_incorrect == 0) {
-			  HAL_UART_Transmit(&huart2, "Sam C\r\n", 7, 10);
-		  } else {
-			  HAL_UART_Transmit(&huart2, "Error\r\n", 7, 10);
-		  }
-	  }
-	  if (ring_buffer_is_empty(&rb_usart3) == 0) {
-		  uint8_t data;
-		  ring_buffer_read(&rb_usart3, &data);
-		  HAL_UART_Transmit(&huart2, &data, 1, 10);
-	  }
-	  heartbeat();
-	  turn_signal_left();
+	  hearbeat();
+
+  if (left_flag) {
+      turn_signal_left();
+  }
+  if (right_flag) {
+      turn_signal_right();
+  }
+  if (hazard_flag) {
+      turn_signal_hazard();
+  }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -295,41 +292,6 @@ static void MX_USART2_UART_Init(void)
 }
 
 /**
-  * @brief USART3 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART3_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART3_Init 0 */
-
-  /* USER CODE END USART3_Init 0 */
-
-  /* USER CODE BEGIN USART3_Init 1 */
-
-  /* USER CODE END USART3_Init 1 */
-  huart3.Instance = USART3;
-  huart3.Init.BaudRate = 115200;
-  huart3.Init.WordLength = UART_WORDLENGTH_8B;
-  huart3.Init.StopBits = UART_STOPBITS_1;
-  huart3.Init.Parity = UART_PARITY_NONE;
-  huart3.Init.Mode = UART_MODE_TX_RX;
-  huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart3.Init.OverSampling = UART_OVERSAMPLING_16;
-  huart3.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  huart3.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(&huart3) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART3_Init 2 */
-
-  /* USER CODE END USART3_Init 2 */
-
-}
-
-/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -342,14 +304,13 @@ static void MX_GPIO_Init(void)
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, D1_Pin|D3_Pin|ROW1_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOA, D1_Pin|D3_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, ROW2_Pin|ROW4_Pin|ROW3_Pin|D4_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(D4_GPIO_Port, D4_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pins : S1_Pin S2_Pin */
   GPIO_InitStruct.Pin = S1_Pin|S2_Pin;
@@ -357,37 +318,25 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : D1_Pin D3_Pin ROW1_Pin */
-  GPIO_InitStruct.Pin = D1_Pin|D3_Pin|ROW1_Pin;
+  /*Configure GPIO pins : D1_Pin D3_Pin */
+  GPIO_InitStruct.Pin = D1_Pin|D3_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : COLUMN1_Pin */
-  GPIO_InitStruct.Pin = COLUMN1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  HAL_GPIO_Init(COLUMN1_GPIO_Port, &GPIO_InitStruct);
+  /*Configure GPIO pin : S3_Pin */
+  GPIO_InitStruct.Pin = S3_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(S3_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : COLUMN4_Pin */
-  GPIO_InitStruct.Pin = COLUMN4_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  HAL_GPIO_Init(COLUMN4_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : COLUMN2_Pin COLUMN3_Pin */
-  GPIO_InitStruct.Pin = COLUMN2_Pin|COLUMN3_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : ROW2_Pin ROW4_Pin ROW3_Pin D4_Pin */
-  GPIO_InitStruct.Pin = ROW2_Pin|ROW4_Pin|ROW3_Pin|D4_Pin;
+  /*Configure GPIO pin : D4_Pin */
+  GPIO_InitStruct.Pin = D4_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  HAL_GPIO_Init(D4_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI1_IRQn, 0, 0);
@@ -395,12 +344,6 @@ static void MX_GPIO_Init(void)
 
   HAL_NVIC_SetPriority(EXTI4_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI4_IRQn);
-
-  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
-
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
